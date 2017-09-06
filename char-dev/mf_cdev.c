@@ -13,6 +13,9 @@
 static dev_t    mf_dev;         /* structure for major and minor numbers */
 struct cdev     mf_chardev;  
 
+/**
+ * \brief Call by open syscall
+ */
 static int mf_cdev_open(struct inode *inodp, struct file *filp)
 {
     printk(KERN_INFO "mf_cdev: I was opened! :).\n");
@@ -20,10 +23,23 @@ static int mf_cdev_open(struct inode *inodp, struct file *filp)
     return 0;
 }
 
+/**
+ * \brief Call by close syscall
+ *        Note: if this char device file structure is shared, 
+ *              then the release function won't be called until 
+ *              the last instance releases (closes) it!
+ */
+ static int mf_cdev_release(struct inode *inodp, struct file *filp)
+ {
+     printk(KERN_INFO "mf_cdev: I was closed! :(.\n");
+     /* TBA */
+     return 0;
+ }
+
 struct file_operations mf_cdev_fops = {
-    .owner  = THIS_MODULE,
-    .open   = mf_cdev_open
-    /* release (close) must be added! */
+    .owner      = THIS_MODULE,
+    .open       = mf_cdev_open,
+    .release    = mf_cdev_release
 };
 
 static int __init mf_cdev_init_function(void)
