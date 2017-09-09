@@ -11,7 +11,7 @@
 #define MFCDEV_DEVNUM   1
 
 static dev_t    mf_dev;         /* structure for major and minor numbers */
-struct cdev     mf_chardev;  
+struct cdev     mf_chardev;
 
 /**
  * \brief Call by open syscall
@@ -25,8 +25,8 @@ static int mf_cdev_open(struct inode *inodp, struct file *filp)
 
 /**
  * \brief Call by close syscall
- *        Note: if this char device file structure is shared, 
- *              then the release function won't be called until 
+ *        Note: if this char device file structure is shared,
+ *              then the release function won't be called until
  *              the last instance releases (closes) it!
  */
  static int mf_cdev_release(struct inode *inodp, struct file *filp)
@@ -52,14 +52,17 @@ static int __init mf_cdev_init_function(void)
         goto init_failed;
     }
     printk(KERN_INFO "mf_cdev: activated! major: %d, minor: %d\n",
-                                            MAJOR(mf_dev), MINOR(mf_dev));   
+                                            MAJOR(mf_dev), MINOR(mf_dev));
 
-    cdev_init(&mf_chardev, &mf_cdev_fops); 
-    err = cdev_add(&mf_chardev, mf_dev, MFCDEV_DEVNUM);
+    /* there will be only one standalone cdev */
+    cdev_init(&mf_chardev, &mf_cdev_fops);
+    mf_chardev.owner = THIS_MODULE;
+    mf_chardev.ops = &mf_cdev_fops;
+    err = cdev_add(&mf_chardev, mf_dev, 1);
     if (err < 0) {
         printk(KERN_ALERT "Could not add char device (ERR=%d).\n", err);
         goto init_cdev_add_failed;
-    }    
+    }
     printk(KERN_INFO "mf_cdev: successfully added char device!\n");
 
     return 0; /* on success */
@@ -67,7 +70,7 @@ static int __init mf_cdev_init_function(void)
     /* if something fails */
 init_cdev_add_failed:
     unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
-init_failed: 
+init_failed:
     return err;
 }
 
