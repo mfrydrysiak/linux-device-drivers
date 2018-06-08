@@ -18,9 +18,9 @@ struct cdev     mf_chardev;
  */
 static int mf_cdev_open(struct inode *inodp, struct file *filp)
 {
-    printk(KERN_INFO "mf_cdev: I was opened! :).\n");
-    /* TBA */
-    return 0;
+	printk(KERN_INFO "mf_cdev: I was opened! :).\n");
+	/* TBA */
+	return 0;
 }
 
 /**
@@ -29,56 +29,56 @@ static int mf_cdev_open(struct inode *inodp, struct file *filp)
  *              then the release function won't be called until
  *              the last instance releases (closes) it!
  */
- static int mf_cdev_release(struct inode *inodp, struct file *filp)
- {
-     printk(KERN_INFO "mf_cdev: I was closed! :(.\n");
-     /* TBA */
-     return 0;
- }
+static int mf_cdev_release(struct inode *inodp, struct file *filp)
+{
+	printk(KERN_INFO "mf_cdev: I was closed! :(.\n");
+	/* TBA */
+	return 0;
+}
 
 struct file_operations mf_cdev_fops = {
-    .owner      = THIS_MODULE,
-    .open       = mf_cdev_open,
-    .release    = mf_cdev_release
+	.owner      = THIS_MODULE,
+	.open       = mf_cdev_open,
+	.release    = mf_cdev_release
 };
 
 static int __init mf_cdev_init_function(void)
 {
-    int err;
+	int err;
 
-    err = alloc_chrdev_region(&mf_dev, MFCDEV_MINOR, MFCDEV_DEVNUM, "mf_cdev");
-    if (err < 0) {
-        printk(KERN_ALERT "Could not register char device (ERR=%d).\n", err);
-        goto init_failed;
-    }
-    printk(KERN_INFO "mf_cdev: activated! major: %d, minor: %d\n",
-                                            MAJOR(mf_dev), MINOR(mf_dev));
+	err = alloc_chrdev_region(&mf_dev, MFCDEV_MINOR, MFCDEV_DEVNUM, "mf_cdev");
+	if (err < 0) {
+		printk(KERN_ALERT "Could not register char device (ERR=%d).\n", err);
+		goto init_failed;
+	}
+	printk(KERN_INFO "mf_cdev: activated! major: %d, minor: %d\n",
+	       MAJOR(mf_dev), MINOR(mf_dev));
 
-    /* there will be only one standalone cdev */
-    cdev_init(&mf_chardev, &mf_cdev_fops);
-    mf_chardev.owner = THIS_MODULE;
-    mf_chardev.ops = &mf_cdev_fops;
-    err = cdev_add(&mf_chardev, mf_dev, 1);
-    if (err < 0) {
-        printk(KERN_ALERT "Could not add char device (ERR=%d).\n", err);
-        goto init_cdev_add_failed;
-    }
-    printk(KERN_INFO "mf_cdev: successfully added char device!\n");
+	/* there will be only one standalone cdev */
+	cdev_init(&mf_chardev, &mf_cdev_fops);
+	mf_chardev.owner = THIS_MODULE;
+	mf_chardev.ops = &mf_cdev_fops;
+	err = cdev_add(&mf_chardev, mf_dev, 1);
+	if (err < 0) {
+		printk(KERN_ALERT "Could not add char device (ERR=%d).\n", err);
+		goto init_cdev_add_failed;
+	}
+	printk(KERN_INFO "mf_cdev: successfully added char device!\n");
 
-    return 0; /* on success */
+	return 0; /* on success */
 
-    /* if something fails */
+	/* if something fails */
 init_cdev_add_failed:
-    unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
+	unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
 init_failed:
-    return err;
+	return err;
 }
 
 static void __exit mf_cdev_cleanup_function(void)
 {
-    cdev_del(&mf_chardev);
-    unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
-    printk(KERN_INFO "mf_cdev: deactivated!\n");
+	cdev_del(&mf_chardev);
+	unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
+	printk(KERN_INFO "mf_cdev: deactivated!\n");
 }
 
 module_init(mf_cdev_init_function);
