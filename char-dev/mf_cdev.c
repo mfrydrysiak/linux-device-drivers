@@ -7,11 +7,14 @@
 #define MFCDEV_AUTHOR   "Marek Frydrysiak <marek.frydrysiak@gmail.com>"
 #define MFCDEV_DESC     "A simple, char device driver"
 
+#define MFCDEV_NAME     "mfchar"
 #define MFCDEV_MINOR    0
 #define MFCDEV_DEVNUM   1
 
-static dev_t    mf_dev;         /* structure for major and minor numbers */
-struct cdev     mf_chardev;
+static dev_t mf_dev;            /* structure for major and minor numbers */
+static struct cdev mfchar;
+static struct class * mfchar_class = NULL;
+static struct device * mfchar_device = NULL;
 
 /**
  * \brief Call by open syscall
@@ -44,39 +47,61 @@ struct file_operations mf_cdev_fops = {
 
 static int __init mf_cdev_init_function(void)
 {
-	int err;
+	int ret;
 
-	err = alloc_chrdev_region(&mf_dev, MFCDEV_MINOR, MFCDEV_DEVNUM, "mf_cdev");
-	if (err < 0) {
-		printk(KERN_ALERT "Could not register char device (ERR=%d).\n", err);
+	ret = alloc_chrdev_region(&mf_dev, MFCDEV_MINOR, MFCDEV_DEVNUM, MFCDEV_NAME);
+	if (ret < 0) {
+		printk(KERN_ALERT "Could not register char device (ERR=%d)\n", ret);
 		goto init_failed;
 	}
-	printk(KERN_INFO "mf_cdev: activated! major: %d, minor: %d\n",
+	printk(KERN_INFO "mf_cdev: activated; major: %d, minor: %d\n",
 	       MAJOR(mf_dev), MINOR(mf_dev));
 
 	/* there will be only one standalone cdev */
-	cdev_init(&mf_chardev, &mf_cdev_fops);
-	mf_chardev.owner = THIS_MODULE;
-	mf_chardev.ops = &mf_cdev_fops;
-	err = cdev_add(&mf_chardev, mf_dev, 1);
-	if (err < 0) {
-		printk(KERN_ALERT "Could not add char device (ERR=%d).\n", err);
+	cdev_init(&mfchar, &mf_cdev_fops);
+	mfchar.owner = THIS_MODULE;
+	mfchar.ops = &mf_cdev_fops;
+	ret = cdev_add(&mfchar, mf_dev, 1);
+	if (ret < 0) {
+		printk(KERN_ALERT "mf_cdev: could not add char device (ERR=%d)\n",
+		       ret);
 		goto init_cdev_add_failed;
 	}
-	printk(KERN_INFO "mf_cdev: successfully added char device!\n");
+	printk(KERN_INFO "mf_cdev: successfully added char device\n");
+
+	mfchar_class = class_create(mfchar.owner, MFCDEV_NAME);
+	if (IS_ERR(mfchar_class)) {
+		printk(KERN_ALERT "mf_cdev: could not create device class\n");
+		ret = PTR_ERR(mfchar_class);
+		goto init_cdev_add_failed;
+	}
+	printk(KERN_INFO "mf_cdev: registered device class\n");
+
+	/* create a device and register it with sysfs */
+	mfchar_device = device_create(mfchar_class, NULL, mf_dev, NULL, MFCDEV_NAME);
+	if (IS_ERR(mfchar_device)) {
+		printk(KERN_ALERT "mf_cdev: could not create device\n");
+		ret = PTR_ERR(mfchar_device);
+		goto init_device_create_failed;
+	}
+	printk(KERN_INFO "mf_cdev: created device and registered with sysfs\n");
 
 	return 0; /* on success */
 
 	/* if something fails */
+init_device_create_failed:
+	class_destroy(mfchar_class);
 init_cdev_add_failed:
 	unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
 init_failed:
-	return err;
+	return ret;
 }
 
 static void __exit mf_cdev_cleanup_function(void)
 {
-	cdev_del(&mf_chardev);
+	device_destroy(mfchar_class, mf_dev);
+	class_destroy(mfchar_class);
+	cdev_del(&mfchar);
 	unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
 	printk(KERN_INFO "mf_cdev: deactivated!\n");
 }
