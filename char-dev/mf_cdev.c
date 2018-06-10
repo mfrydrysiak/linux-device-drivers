@@ -3,6 +3,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/cdev.h>
+#include <linux/uaccess.h>
 
 #define MFCDEV_AUTHOR   "Marek Frydrysiak <marek.frydrysiak@gmail.com>"
 #define MFCDEV_DESC     "A simple, char device driver"
@@ -10,6 +11,8 @@
 #define MFCDEV_NAME     "mfchar"
 #define MFCDEV_MINOR    0
 #define MFCDEV_DEVNUM   1
+
+#define MAX_BUF_SIZE    128
 
 static dev_t mf_dev;            /* structure for major and minor numbers */
 static struct cdev mfchar;
@@ -39,10 +42,27 @@ static int mf_cdev_release(struct inode *inodp, struct file *filp)
 	return 0;
 }
 
-struct file_operations mf_cdev_fops = {
+static ssize_t mf_cdev_write(struct file *filp, const char __user *buf,
+						size_t count, loff_t *ppos)
+{
+	unsigned char driver_buf[MAX_BUF_SIZE];
+	size_t copy_size = count;
+
+	/* Check user-space copy size request */
+	if (copy_size > MAX_BUF_SIZE)
+		copy_size = MAX_BUF_SIZE;
+	if (copy_from_user(driver_buf, buf, copy_size))
+		return -EFAULT;
+
+	printk(KERN_INFO "mf_cdev: received from user-space: %s\n", driver_buf);
+	return copy_size;
+}
+
+static const struct file_operations mf_cdev_fops = {
 	.owner      = THIS_MODULE,
 	.open       = mf_cdev_open,
-	.release    = mf_cdev_release
+	.release    = mf_cdev_release,
+	.write      = mf_cdev_write
 };
 
 static int __init mf_cdev_init_function(void)
