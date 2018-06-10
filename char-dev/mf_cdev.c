@@ -14,6 +14,7 @@
 
 #define MAX_BUF_SIZE    128
 static unsigned char driver_rw_buf[MAX_BUF_SIZE];
+static size_t buf_copy_size;
 
 static dev_t mf_dev;            /* structure for major and minor numbers */
 static struct cdev mfchar;
@@ -46,24 +47,40 @@ static int mf_cdev_release(struct inode *inodp, struct file *filp)
 static ssize_t mf_cdev_write(struct file *filp, const char __user *buf,
 						size_t count, loff_t *ppos)
 {
-	size_t copy_size = count;
+	buf_copy_size = count;
 
 	/* Check user-space copy size request */
-	if (copy_size > MAX_BUF_SIZE)
-		copy_size = MAX_BUF_SIZE;
-	if (copy_from_user(driver_rw_buf, buf, copy_size))
+	if (buf_copy_size > MAX_BUF_SIZE)
+		buf_copy_size = MAX_BUF_SIZE;
+	if (copy_from_user(driver_rw_buf, buf, buf_copy_size))
 		return -EFAULT;
 
-	printk(KERN_INFO "mf_cdev: number of chars received = %ld\n", copy_size);
+	printk(KERN_INFO "mf_cdev: number of chars received = %ld\n", buf_copy_size);
 	printk(KERN_INFO "mf_cdev: received from user-space: %s\n", driver_rw_buf);
-	return copy_size;
+	return buf_copy_size;
+}
+
+static ssize_t mf_cdev_read(struct file *filp, char __user *buf, size_t count,
+						loff_t *ppos)
+{
+	/* Check user-space copy size request */
+	if (count > buf_copy_size)
+		count = buf_copy_size;
+	if (copy_to_user(buf, driver_rw_buf, count))
+		return -EFAULT;
+
+	buf_copy_size = 0;
+
+	printk(KERN_INFO "mf_cdev: copied %ld chars to user-space\n", count);
+	return count;
 }
 
 static const struct file_operations mf_cdev_fops = {
 	.owner      = THIS_MODULE,
 	.open       = mf_cdev_open,
 	.release    = mf_cdev_release,
-	.write      = mf_cdev_write
+	.write      = mf_cdev_write,
+	.read       = mf_cdev_read
 };
 
 static int __init mf_cdev_init_function(void)
