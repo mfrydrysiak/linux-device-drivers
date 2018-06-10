@@ -13,6 +13,7 @@
 #define MFCDEV_DEVNUM   1
 
 #define MAX_BUF_SIZE    128
+static unsigned char driver_rw_buf[MAX_BUF_SIZE];
 
 static dev_t mf_dev;            /* structure for major and minor numbers */
 static struct cdev mfchar;
@@ -45,16 +46,16 @@ static int mf_cdev_release(struct inode *inodp, struct file *filp)
 static ssize_t mf_cdev_write(struct file *filp, const char __user *buf,
 						size_t count, loff_t *ppos)
 {
-	unsigned char driver_buf[MAX_BUF_SIZE];
 	size_t copy_size = count;
 
 	/* Check user-space copy size request */
 	if (copy_size > MAX_BUF_SIZE)
 		copy_size = MAX_BUF_SIZE;
-	if (copy_from_user(driver_buf, buf, copy_size))
+	if (copy_from_user(driver_rw_buf, buf, copy_size))
 		return -EFAULT;
 
-	printk(KERN_INFO "mf_cdev: received from user-space: %s\n", driver_buf);
+	printk(KERN_INFO "mf_cdev: number of chars received = %ld\n", copy_size);
+	printk(KERN_INFO "mf_cdev: received from user-space: %s\n", driver_rw_buf);
 	return copy_size;
 }
 
