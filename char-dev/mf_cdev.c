@@ -4,13 +4,17 @@
 #include <linux/kernel.h>
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
+#include <linux/mutex.h>
 
 #define MFCDEV_AUTHOR   "Marek Frydrysiak <marek.frydrysiak@gmail.com>"
 #define MFCDEV_DESC     "A simple, char device driver"
 
-#define MFCDEV_NAME     "mfchar"
+#define MFDEVNODE_NAME  "mfchar"
+#define MFCDEV_NAME     "mf_cdev"
 #define MFCDEV_MINOR    0
 #define MFCDEV_DEVNUM   1
+
+static DEFINE_MUTEX(mfchar_mutex);
 
 #define MAX_BUF_SIZE    128
 static unsigned char driver_rw_buf[MAX_BUF_SIZE];
@@ -26,8 +30,11 @@ static struct device * mfchar_device = NULL;
  */
 static int mf_cdev_open(struct inode *inodp, struct file *filp)
 {
-	printk(KERN_INFO "mf_cdev: I was opened! :).\n");
-	/* TBA */
+	if (!mutex_trylock(&mfchar_mutex)) {
+		printk(KERN_INFO "%s: device is busy\n", MFCDEV_NAME);
+		return -EBUSY;
+	}
+	printk(KERN_INFO "%s: device opened\n", MFCDEV_NAME);
 	return 0;
 }
 
@@ -39,8 +46,8 @@ static int mf_cdev_open(struct inode *inodp, struct file *filp)
  */
 static int mf_cdev_release(struct inode *inodp, struct file *filp)
 {
-	printk(KERN_INFO "mf_cdev: I was closed! :(.\n");
-	/* TBA */
+	printk(KERN_INFO "%s: device closed\n", MFCDEV_NAME);
+	mutex_unlock(&mfchar_mutex);
 	return 0;
 }
 
@@ -55,8 +62,10 @@ static ssize_t mf_cdev_write(struct file *filp, const char __user *buf,
 	if (copy_from_user(driver_rw_buf, buf, buf_copy_size))
 		return -EFAULT;
 
-	printk(KERN_INFO "mf_cdev: number of chars received = %ld\n", buf_copy_size);
-	printk(KERN_INFO "mf_cdev: received from user-space: %s\n", driver_rw_buf);
+	printk(KERN_INFO "%s: number of chars received = %ld\n",
+						MFCDEV_NAME, buf_copy_size);
+	printk(KERN_INFO "%s: received from user-space: %s\n",
+						MFCDEV_NAME, driver_rw_buf);
 	return buf_copy_size;
 }
 
@@ -71,7 +80,8 @@ static ssize_t mf_cdev_read(struct file *filp, char __user *buf, size_t count,
 
 	buf_copy_size = 0;
 
-	printk(KERN_INFO "mf_cdev: copied %ld chars to user-space\n", count);
+	printk(KERN_INFO "%s: copied %ld chars to user-space\n",
+						MFCDEV_NAME, count);
 	return count;
 }
 
@@ -87,9 +97,11 @@ static int __init mf_cdev_init_function(void)
 {
 	int ret;
 
-	ret = alloc_chrdev_region(&mf_dev, MFCDEV_MINOR, MFCDEV_DEVNUM, MFCDEV_NAME);
+	ret = alloc_chrdev_region(&mf_dev, MFCDEV_MINOR, MFCDEV_DEVNUM,
+								MFDEVNODE_NAME);
 	if (ret < 0) {
-		printk(KERN_ALERT "Could not register char device (ERR=%d)\n", ret);
+		printk(KERN_ALERT "%s: could not register char "
+				  "device (ERR=%d)\n", MFCDEV_NAME, ret);
 		goto init_failed;
 	}
 	printk(KERN_INFO "mf_cdev: activated; major: %d, minor: %d\n",
@@ -101,28 +113,33 @@ static int __init mf_cdev_init_function(void)
 	mfchar.ops = &mf_cdev_fops;
 	ret = cdev_add(&mfchar, mf_dev, 1);
 	if (ret < 0) {
-		printk(KERN_ALERT "mf_cdev: could not add char device (ERR=%d)\n",
-		       ret);
+		printk(KERN_ALERT "%s: could not add char device (ERR=%d)\n",
+							MFCDEV_NAME, ret);
 		goto init_cdev_add_failed;
 	}
-	printk(KERN_INFO "mf_cdev: successfully added char device\n");
+	printk(KERN_INFO "%s: successfully added char device\n", MFCDEV_NAME);
 
-	mfchar_class = class_create(mfchar.owner, MFCDEV_NAME);
+	mfchar_class = class_create(mfchar.owner, MFDEVNODE_NAME);
 	if (IS_ERR(mfchar_class)) {
-		printk(KERN_ALERT "mf_cdev: could not create device class\n");
+		printk(KERN_ALERT "%s: could not create device class\n",
+							MFCDEV_NAME);
 		ret = PTR_ERR(mfchar_class);
 		goto init_cdev_add_failed;
 	}
-	printk(KERN_INFO "mf_cdev: registered device class\n");
+	printk(KERN_INFO "%s: registered device class\n", MFCDEV_NAME);
 
 	/* create a device and register it with sysfs */
-	mfchar_device = device_create(mfchar_class, NULL, mf_dev, NULL, MFCDEV_NAME);
+	mfchar_device = device_create(mfchar_class, NULL, mf_dev, NULL,
+								MFDEVNODE_NAME);
 	if (IS_ERR(mfchar_device)) {
-		printk(KERN_ALERT "mf_cdev: could not create device\n");
+		printk(KERN_ALERT "%s: could not create device\n", MFCDEV_NAME);
 		ret = PTR_ERR(mfchar_device);
 		goto init_device_create_failed;
 	}
-	printk(KERN_INFO "mf_cdev: created device and registered with sysfs\n");
+	printk(KERN_INFO "%s: created device and registered with sysfs\n",
+							MFCDEV_NAME);
+
+	mutex_init(&mfchar_mutex);
 
 	return 0; /* on success */
 
@@ -137,11 +154,12 @@ init_failed:
 
 static void __exit mf_cdev_cleanup_function(void)
 {
+	mutex_destroy(&mfchar_mutex);
 	device_destroy(mfchar_class, mf_dev);
 	class_destroy(mfchar_class);
 	cdev_del(&mfchar);
 	unregister_chrdev_region(mf_dev, MFCDEV_DEVNUM);
-	printk(KERN_INFO "mf_cdev: deactivated!\n");
+	printk(KERN_INFO "%s: deactivated!\n", MFCDEV_NAME);
 }
 
 module_init(mf_cdev_init_function);
