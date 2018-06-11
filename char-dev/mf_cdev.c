@@ -5,6 +5,7 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/mutex.h>
+#include <linux/slab.h>
 
 #define MFCDEV_AUTHOR   "Marek Frydrysiak <marek.frydrysiak@gmail.com>"
 #define MFCDEV_DESC     "A simple, char device driver"
@@ -25,17 +26,31 @@ static struct cdev mfchar;
 static struct class * mfchar_class = NULL;
 static struct device * mfchar_device = NULL;
 
+struct mf_cdev_struct {
+    unsigned char buffer[MAX_BUF_SIZE];
+    size_t buf_copy_size;
+};
+
 /**
  * \brief Call by open syscall
  */
 static int mf_cdev_open(struct inode *inodp, struct file *filp)
 {
-	if (!mutex_trylock(&mfchar_mutex)) {
-		printk(KERN_INFO "%s: device is busy\n", MFCDEV_NAME);
-		return -EBUSY;
-	}
-	printk(KERN_INFO "%s: device opened\n", MFCDEV_NAME);
-	return 0;
+    struct mf_cdev_struct *mf;
+
+    mf = kzalloc(sizeof(*mf), GFP_KERNEL);
+
+    if (mf) {
+        filp->private_data = mf;
+        printk(KERN_INFO "%s: device opened\n", MFCDEV_NAME);
+    }
+
+	//if (!mutex_trylock(&mfchar_mutex)) {
+	//	printk(KERN_INFO "%s: device is busy\n", MFCDEV_NAME);
+	//	return -EBUSY;
+	//}
+	
+	return  mf ? 0 : -ENOMEM;
 }
 
 /**
@@ -46,39 +61,47 @@ static int mf_cdev_open(struct inode *inodp, struct file *filp)
  */
 static int mf_cdev_release(struct inode *inodp, struct file *filp)
 {
+    struct mf_cdev_struct *mf = filp->private_data;
+    filp->private_data = NULL;
+    kfree(mf);
+
 	printk(KERN_INFO "%s: device closed\n", MFCDEV_NAME);
-	mutex_unlock(&mfchar_mutex);
+//	mutex_unlock(&mfchar_mutex);
 	return 0;
 }
 
 static ssize_t mf_cdev_write(struct file *filp, const char __user *buf,
 						size_t count, loff_t *ppos)
 {
-	buf_copy_size = count;
+    struct mf_cdev_struct *mf = filp->private_data;
+
+    mf->buf_copy_size = count;
 
 	/* Check user-space copy size request */
-	if (buf_copy_size > MAX_BUF_SIZE)
-		buf_copy_size = MAX_BUF_SIZE;
-	if (copy_from_user(driver_rw_buf, buf, buf_copy_size))
+	if (mf->buf_copy_size > MAX_BUF_SIZE)
+		mf->buf_copy_size = MAX_BUF_SIZE;
+	if (copy_from_user(mf->buffer, buf, mf->buf_copy_size))
 		return -EFAULT;
 
 	printk(KERN_INFO "%s: number of chars received = %ld\n",
-						MFCDEV_NAME, buf_copy_size);
+						MFCDEV_NAME, mf->buf_copy_size);
 	printk(KERN_INFO "%s: received from user-space: %s\n",
-						MFCDEV_NAME, driver_rw_buf);
+						MFCDEV_NAME, mf->buffer);
 	return buf_copy_size;
 }
 
 static ssize_t mf_cdev_read(struct file *filp, char __user *buf, size_t count,
 						loff_t *ppos)
 {
+    struct mf_cdev_struct *mf = filp->private_data;
+
 	/* Check user-space copy size request */
-	if (count > buf_copy_size)
-		count = buf_copy_size;
-	if (copy_to_user(buf, driver_rw_buf, count))
+	if (count > mf->buf_copy_size)
+		count = mf->buf_copy_size;
+	if (copy_to_user(buf, mf->buffer, count))
 		return -EFAULT;
 
-	buf_copy_size = 0;
+	mf->buf_copy_size = 0;
 
 	printk(KERN_INFO "%s: copied %ld chars to user-space\n",
 						MFCDEV_NAME, count);
